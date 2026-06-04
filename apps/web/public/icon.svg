@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#18181B"/>
+  <!-- Folder tab -->
+  <path d="M96 192 C96 176 109 163 125 163 H218 C226 163 233 166 238 172 L262 196 H387 C403 196 416 209 416 225 V356 C416 372 403 385 387 385 H125 C109 385 96 372 96 356 Z" fill="white" opacity="0.12"/>
+  <!-- Folder body -->
+  <path d="M96 220 C96 204 109 191 125 191 H387 C403 191 416 204 416 220 V356 C416 372 403 385 387 385 H125 C109 385 96 372 96 356 Z" fill="white" opacity="0.90"/>
+  <!-- File lines -->
+  <rect x="152" y="268" width="208" height="18" rx="9" fill="#18181B" opacity="0.65"/>
+  <rect x="152" y="308" width="144" height="18" rx="9" fill="#18181B" opacity="0.45"/>
+</svg>

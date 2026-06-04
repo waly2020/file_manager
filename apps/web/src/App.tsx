@@ -1,19 +1,24 @@
-import { Button } from "@workspace/ui/components/button"
+import { HashRouter, Route, Routes } from "react-router-dom"
+import { Dashboard } from "@/pages/dashboard"
+import { ExtensionRemover } from "@/pages/extension-remover"
+import { FileOrganizer } from "@/pages/file-organizer"
+import { BatchRename } from "@/pages/batch-rename"
+import { Statistics } from "@/pages/statistics"
+import { History } from "@/pages/history"
+import { Settings } from "@/pages/settings"
 
 export function App() {
   return (
-    <div className="flex min-h-svh p-6">
-      <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
-        <div>
-          <h1 className="font-medium">Project ready!</h1>
-          <p>You may now add components and start building.</p>
-          <p>We&apos;ve already added the button component for you.</p>
-          <Button className="mt-2">Button</Button>
-        </div>
-        <div className="text-muted-foreground font-mono text-xs">
-          (Press <kbd>d</kbd> to toggle dark mode)
-        </div>
-      </div>
-    </div>
+    <HashRouter>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/extension-remover" element={<ExtensionRemover />} />
+        <Route path="/file-organizer" element={<FileOrganizer />} />
+        <Route path="/batch-rename" element={<BatchRename />} />
+        <Route path="/statistics" element={<Statistics />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/settings" element={<Settings />} />
+      </Routes>
+    </HashRouter>
   )
 }
