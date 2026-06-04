@@ -8,12 +8,11 @@ import { Checkbox } from "@workspace/ui/components/checkbox"
 import { Alert, AlertDescription } from "@workspace/ui/components/alert"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { Separator } from "@workspace/ui/components/separator"
-import { Card, CardContent } from "@workspace/ui/components/card"
+import { Card } from "@workspace/ui/components/card"
 import {
   ArrowRight,
   CheckSquare,
   Square,
-  Play,
   Info,
   TextTSlash,
   CheckCircle,
