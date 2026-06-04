@@ -98,3 +98,33 @@ export function hasExtension(filename: string): boolean {
   const lastDot = filename.lastIndexOf(".")
   return lastDot > 0
 }
+
+export interface RemovableExtension {
+  suffix: string  // ex: ".cach" ou ".png.cach"
+  result: string  // ex: "img.png" ou "img"
+  label: string   // ex: 'Supprimer ".cach"'
+}
+
+export function getRemovableExtensions(filename: string): RemovableExtension[] {
+  const options: RemovableExtension[] = []
+  // On commence à la position 1 pour ignorer les fichiers cachés (.htaccess)
+  let pos = filename.indexOf(".", 1)
+  while (pos !== -1) {
+    const suffix = filename.slice(pos)
+    options.push({
+      suffix,
+      result: filename.slice(0, pos),
+      label: `Supprimer "${suffix}"`,
+    })
+    pos = filename.indexOf(".", pos + 1)
+  }
+  // On inverse pour mettre la dernière extension en premier (choix le moins agressif)
+  return options.reverse()
+}
+
+export function computeNewName(filename: string, chosenSuffix?: string): string {
+  const options = getRemovableExtensions(filename)
+  if (options.length === 0) return filename
+  const suffix = chosenSuffix ?? options[0].suffix
+  return filename.slice(0, filename.length - suffix.length)
+}

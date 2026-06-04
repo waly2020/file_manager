@@ -1,4 +1,4 @@
-import { getCategoryForExtension, removeExtension, getExtension } from "./categories"
+import { getCategoryForExtension, getExtension, getRemovableExtensions, computeNewName } from "./categories"
 import { renameFile, moveFileToDir } from "./fs"
 import type { FileInfo } from "./fs"
 import type { Category } from "./categories"
@@ -31,6 +31,7 @@ export interface RenameRule {
 export async function removeExtensionsFromFiles(
   dirHandle: FileSystemDirectoryHandle,
   files: FileInfo[],
+  suffixChoices: Map<string, string>,
   onProgress?: (done: number, total: number) => void
 ): Promise<OperationResult> {
   const result: OperationResult = { success: [], errors: [] }
@@ -39,12 +40,19 @@ export async function removeExtensionsFromFiles(
     const file = files[i]
     onProgress?.(i, files.length)
 
-    if (!file.extension) {
+    const options = getRemovableExtensions(file.name)
+    if (options.length === 0) {
       result.errors.push({ file: file.name, error: "Pas d'extension à supprimer" })
       continue
     }
 
-    const newName = removeExtension(file.name)
+    const chosenSuffix = suffixChoices.get(file.name) ?? options[0].suffix
+    const newName = computeNewName(file.name, chosenSuffix)
+
+    if (newName === file.name) {
+      result.errors.push({ file: file.name, error: "Nom identique, ignoré" })
+      continue
+    }
 
     try {
       await renameFile(dirHandle, file.name, newName)

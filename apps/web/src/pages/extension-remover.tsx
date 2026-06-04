@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { Layout } from "@/components/layout"
 import { FolderPicker } from "@/components/folder-picker"
 import { Button } from "@workspace/ui/components/button"
@@ -9,6 +9,13 @@ import { Alert, AlertDescription } from "@workspace/ui/components/alert"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { Separator } from "@workspace/ui/components/separator"
 import { Card } from "@workspace/ui/components/card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
 import {
   ArrowRight,
   CheckSquare,
@@ -21,30 +28,41 @@ import {
 import { toast } from "sonner"
 import type { FileInfo } from "@/lib/fs"
 import { formatFileSize, listFiles } from "@/lib/fs"
-import { removeExtension, hasExtension } from "@/lib/categories"
+import { hasExtension, getRemovableExtensions, computeNewName } from "@/lib/categories"
 import { removeExtensionsFromFiles } from "@/lib/file-ops"
 import { useAppStore } from "@/store/app-store"
-
-interface ProgressState {
-  done: number
-  total: number
-}
 
 export function ExtensionRemover() {
   const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(null)
   const [files, setFiles] = useState<FileInfo[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [progress, setProgress] = useState<ProgressState | null>(null)
+  // Map<filename, chosenSuffix> — par défaut : dernière extension seulement
+  const [suffixChoices, setSuffixChoices] = useState<Map<string, string>>(new Map())
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [results, setResults] = useState<{ success: number; errors: number } | null>(null)
   const addHistoryEntry = useAppStore((s) => s.addHistoryEntry)
 
   const eligibleFiles = useMemo(() => files.filter((f) => hasExtension(f.name)), [files])
   const allSelected = eligibleFiles.length > 0 && selected.size === eligibleFiles.length
 
+  const getChoice = useCallback(
+    (filename: string) => {
+      const options = getRemovableExtensions(filename)
+      return suffixChoices.get(filename) ?? options[0]?.suffix ?? ""
+    },
+    [suffixChoices]
+  )
+
+  const getPreviewName = useCallback(
+    (filename: string) => computeNewName(filename, getChoice(filename)),
+    [getChoice]
+  )
+
   const handleFolderSelect = (dir: FileSystemDirectoryHandle, fileList: FileInfo[]) => {
     setDirHandle(dir)
     setFiles(fileList)
     setSelected(new Set())
+    setSuffixChoices(new Map())
     setProgress(null)
     setResults(null)
   }
@@ -62,6 +80,10 @@ export function ExtensionRemover() {
     })
   }
 
+  const setChoice = (filename: string, suffix: string) => {
+    setSuffixChoices((prev) => new Map(prev).set(filename, suffix))
+  }
+
   const execute = async () => {
     if (!dirHandle || selected.size === 0) return
     const filesToProcess = eligibleFiles.filter((f) => selected.has(f.name))
@@ -72,6 +94,7 @@ export function ExtensionRemover() {
       const result = await removeExtensionsFromFiles(
         dirHandle,
         filesToProcess,
+        suffixChoices,
         (done, total) => setProgress({ done, total })
       )
 
@@ -94,6 +117,7 @@ export function ExtensionRemover() {
       const updatedFiles = await listFiles(dirHandle)
       setFiles(updatedFiles)
       setSelected(new Set())
+      setSuffixChoices(new Map())
     } catch (e) {
       toast.error("Erreur : " + String(e))
     } finally {
@@ -106,7 +130,7 @@ export function ExtensionRemover() {
   return (
     <Layout
       title="Suppresseur d'extensions"
-      description="Retire les extensions des noms de fichiers sélectionnés"
+      description="Choisissez précisément quelle extension retirer pour chaque fichier"
     >
       <div className="flex flex-col gap-6">
         <FolderPicker onSelect={handleFolderSelect} currentDirName={dirHandle?.name} />
@@ -174,37 +198,82 @@ export function ExtensionRemover() {
             )}
 
             <Card>
-              <div className="grid grid-cols-[auto_1fr_32px_1fr_80px] items-center gap-3 border-b px-4 py-2">
+              {/* En-têtes */}
+              <div className="grid grid-cols-[auto_1fr_auto_1fr_80px] items-center gap-3 border-b px-4 py-2">
                 <span className="w-4" />
                 <span className="text-xs font-medium text-muted-foreground">Nom original</span>
-                <span />
+                <span className="w-4" />
                 <span className="text-xs font-medium text-muted-foreground">Nouveau nom</span>
                 <span className="text-xs font-medium text-muted-foreground text-right">Taille</span>
               </div>
+
               <ScrollArea className="h-105">
-                {eligibleFiles.map((file, i) => (
-                  <div key={file.name}>
-                    {i > 0 && <Separator />}
-                    <div
-                      className="grid grid-cols-[auto_1fr_32px_1fr_80px] cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
-                      onClick={() => toggleFile(file.name)}
-                    >
-                      <Checkbox
-                        checked={selected.has(file.name)}
-                        onCheckedChange={() => toggleFile(file.name)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <span className="truncate font-mono text-sm">{file.name}</span>
-                      <ArrowRight className="shrink-0 text-muted-foreground" />
-                      <span className="truncate font-mono text-sm text-primary">
-                        {removeExtension(file.name)}
-                      </span>
-                      <span className="text-right text-xs text-muted-foreground">
-                        {formatFileSize(file.size)}
-                      </span>
+                {eligibleFiles.map((file, i) => {
+                  const options = getRemovableExtensions(file.name)
+                  const isMulti = options.length > 1
+                  const chosenSuffix = getChoice(file.name)
+                  const newName = getPreviewName(file.name)
+                  const isSelected = selected.has(file.name)
+
+                  return (
+                    <div key={file.name}>
+                      {i > 0 && <Separator />}
+                      <div
+                        className="grid grid-cols-[auto_1fr_auto_1fr_80px] cursor-pointer items-center gap-3 px-4 py-2 transition-colors hover:bg-muted/40"
+                        onClick={() => toggleFile(file.name)}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleFile(file.name)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+
+                        {/* Nom original */}
+                        <span className="truncate font-mono text-sm">{file.name}</span>
+
+                        <ArrowRight className="shrink-0 text-muted-foreground" />
+
+                        {/* Nouveau nom + sélecteur si multi-extensions */}
+                        <div className="flex min-w-0 flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+                          {isMulti ? (
+                            <>
+                              <Select
+                                value={chosenSuffix}
+                                onValueChange={(v) => setChoice(file.name, v)}
+                              >
+                                <SelectTrigger className="h-7 w-full text-xs font-mono">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {options.map((opt) => (
+                                    <SelectItem
+                                      key={opt.suffix}
+                                      value={opt.suffix}
+                                      className="font-mono text-xs"
+                                    >
+                                      {opt.label} → <span className="text-primary">{opt.result}</span>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <span className="truncate font-mono text-xs text-primary">
+                                {newName}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="truncate font-mono text-sm text-primary">
+                              {newName}
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="text-right text-xs text-muted-foreground">
+                          {formatFileSize(file.size)}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </ScrollArea>
             </Card>
           </div>
