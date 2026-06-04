@@ -107,6 +107,54 @@ export async function organizeFilesByType(
   return result
 }
 
+export async function organizeFilesByExtension(
+  dirHandle: FileSystemDirectoryHandle,
+  files: FileInfo[],
+  onProgress?: (done: number, total: number) => void
+): Promise<OperationResult> {
+  const result: OperationResult = { success: [], errors: [] }
+  const dirCache = new Map<string, FileSystemDirectoryHandle>()
+
+  const groups = new Map<string, FileInfo[]>()
+  for (const file of files) {
+    const folderName = file.extension ? file.extension.toUpperCase() : "Sans extension"
+    if (!groups.has(folderName)) groups.set(folderName, [])
+    groups.get(folderName)!.push(file)
+  }
+
+  let done = 0
+
+  for (const [folderName, groupFiles] of groups.entries()) {
+    let groupDir = dirCache.get(folderName)
+    if (!groupDir) {
+      try {
+        groupDir = await dirHandle.getDirectoryHandle(folderName, { create: true })
+        dirCache.set(folderName, groupDir)
+      } catch (e) {
+        for (const file of groupFiles) {
+          result.errors.push({ file: file.name, error: `Impossible de créer le dossier "${folderName}"` })
+          done++
+          onProgress?.(done, files.length)
+        }
+        continue
+      }
+    }
+
+    for (const file of groupFiles) {
+      try {
+        await moveFileToDir(dirHandle, groupDir!, file.name)
+        result.success.push(file.name)
+      } catch (e) {
+        result.errors.push({ file: file.name, error: String(e) })
+      }
+      done++
+      onProgress?.(done, files.length)
+    }
+  }
+
+  return result
+}
+
 export function applyRenameRule(filename: string, rule: RenameRule, index: number): string {
   const ext = getExtension(filename)
   const base = ext ? filename.slice(0, -(ext.length + 1)) : filename

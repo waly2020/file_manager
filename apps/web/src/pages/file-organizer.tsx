@@ -14,16 +14,20 @@ import {
   CheckCircle,
   XCircle,
   FolderSimple,
+  Tag,
+  Rows,
 } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import type { FileInfo } from "@/lib/fs"
 import { formatFileSize, listFiles } from "@/lib/fs"
 import { getCategoryForExtension } from "@/lib/categories"
-import { organizeFilesByType } from "@/lib/file-ops"
+import { organizeFilesByType, organizeFilesByExtension } from "@/lib/file-ops"
 import { useAppStore } from "@/store/app-store"
 
-interface GroupedFiles {
-  category: string
+type OrgMode = "by-type" | "by-extension"
+
+interface FolderGroup {
+  folderName: string
   files: FileInfo[]
   totalSize: number
 }
@@ -31,25 +35,32 @@ interface GroupedFiles {
 export function FileOrganizer() {
   const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(null)
   const [files, setFiles] = useState<FileInfo[]>([])
+  const [mode, setMode] = useState<OrgMode>("by-type")
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [results, setResults] = useState<{ success: number; errors: number } | null>(null)
   const { settings, addHistoryEntry } = useAppStore()
 
-  const grouped = useMemo<GroupedFiles[]>(() => {
+  const grouped = useMemo<FolderGroup[]>(() => {
     const map = new Map<string, FileInfo[]>()
+
     for (const file of files) {
-      const cat = getCategoryForExtension(file.extension, settings.categories)
-      if (!map.has(cat)) map.set(cat, [])
-      map.get(cat)!.push(file)
+      const key =
+        mode === "by-extension"
+          ? file.extension ? file.extension.toUpperCase() : "Sans extension"
+          : getCategoryForExtension(file.extension, settings.categories)
+
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(file)
     }
+
     return Array.from(map.entries())
-      .map(([category, catFiles]) => ({
-        category,
-        files: catFiles,
-        totalSize: catFiles.reduce((acc, f) => acc + f.size, 0),
+      .map(([folderName, groupFiles]) => ({
+        folderName,
+        files: groupFiles,
+        totalSize: groupFiles.reduce((acc, f) => acc + f.size, 0),
       }))
       .sort((a, b) => b.files.length - a.files.length)
-  }, [files, settings.categories])
+  }, [files, mode, settings.categories])
 
   const handleFolderSelect = (dir: FileSystemDirectoryHandle, fileList: FileInfo[]) => {
     setDirHandle(dir)
@@ -64,16 +75,18 @@ export function FileOrganizer() {
     setResults(null)
 
     try {
-      const result = await organizeFilesByType(
-        dirHandle,
-        files,
-        settings.categories,
-        (done, total) => setProgress({ done, total })
-      )
+      const result =
+        mode === "by-extension"
+          ? await organizeFilesByExtension(dirHandle, files, (done, total) =>
+              setProgress({ done, total })
+            )
+          : await organizeFilesByType(dirHandle, files, settings.categories, (done, total) =>
+              setProgress({ done, total })
+            )
 
       addHistoryEntry({
         type: "organize",
-        summary: `Organisation de "${dirHandle.name}" en ${grouped.length} catégorie(s)`,
+        summary: `Organisation ${mode === "by-extension" ? "par extension" : "par type"} — "${dirHandle.name}"`,
         folderName: dirHandle.name,
         successCount: result.success.length,
         errorCount: result.errors.length,
@@ -101,11 +114,52 @@ export function FileOrganizer() {
   return (
     <Layout
       title="Organisateur de fichiers"
-      description="Classe automatiquement vos fichiers par type dans des sous-dossiers"
+      description="Classe automatiquement vos fichiers dans des sous-dossiers"
     >
       <div className="flex flex-col gap-6">
         <FolderPicker onSelect={handleFolderSelect} currentDirName={dirHandle?.name} />
 
+        {/* Sélecteur de mode */}
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-medium text-muted-foreground">Mode d'organisation</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setMode("by-type"); setResults(null) }}
+              className={`flex flex-1 items-start gap-3 rounded-lg border p-4 text-left transition-colors ${
+                mode === "by-type"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:bg-muted/50"
+              }`}
+            >
+              <Tag className={`mt-0.5 size-5 shrink-0 ${mode === "by-type" ? "text-primary" : "text-muted-foreground"}`} weight={mode === "by-type" ? "fill" : "regular"} />
+              <div>
+                <p className="text-sm font-medium">Par type de fichier</p>
+                <p className="text-xs text-muted-foreground">
+                  Regroupe les extensions similaires. <span className="font-mono">.jpg</span> et <span className="font-mono">.png</span> → <span className="font-mono">Images/</span>
+                </p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => { setMode("by-extension"); setResults(null) }}
+              className={`flex flex-1 items-start gap-3 rounded-lg border p-4 text-left transition-colors ${
+                mode === "by-extension"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:bg-muted/50"
+              }`}
+            >
+              <Rows className={`mt-0.5 size-5 shrink-0 ${mode === "by-extension" ? "text-primary" : "text-muted-foreground"}`} weight={mode === "by-extension" ? "fill" : "regular"} />
+              <div>
+                <p className="text-sm font-medium">Par extension</p>
+                <p className="text-xs text-muted-foreground">
+                  Un dossier par extension. <span className="font-mono">.jpg</span> → <span className="font-mono">JPG/</span> · <span className="font-mono">.png</span> → <span className="font-mono">PNG/</span>
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Résultats */}
         {results && (
           <div className="flex items-center gap-3">
             <Badge variant="secondary" className="gap-1">
@@ -131,12 +185,10 @@ export function FileOrganizer() {
         {grouped.length > 0 && (
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <p className="text-sm text-muted-foreground">
-                  <strong className="text-foreground">{files.length}</strong> fichier(s) →{" "}
-                  <strong className="text-foreground">{grouped.length}</strong> catégorie(s)
-                </p>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                <strong className="text-foreground">{files.length}</strong> fichier(s) →{" "}
+                <strong className="text-foreground">{grouped.length}</strong> dossier(s)
+              </p>
               <Button onClick={execute} disabled={files.length === 0 || !!progress}>
                 <Play data-icon="inline-start" />
                 Organiser les fichiers
@@ -153,16 +205,16 @@ export function FileOrganizer() {
             )}
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {grouped.map(({ category, files: catFiles, totalSize }) => (
-                <Card key={category}>
+              {grouped.map(({ folderName, files: groupFiles, totalSize }) => (
+                <Card key={folderName}>
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <FolderSimple className="size-4 text-muted-foreground" weight="fill" />
-                        <CardTitle className="text-sm">{category}/</CardTitle>
+                        <CardTitle className="font-mono text-sm">{folderName}/</CardTitle>
                       </div>
                       <Badge variant="secondary" className="text-xs">
-                        {catFiles.length} fichier{catFiles.length > 1 ? "s" : ""}
+                        {groupFiles.length} fichier{groupFiles.length > 1 ? "s" : ""}
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">{formatFileSize(totalSize)}</p>
@@ -170,7 +222,7 @@ export function FileOrganizer() {
                   <CardContent className="pt-0">
                     <ScrollArea className="h-28">
                       <div className="flex flex-col gap-1">
-                        {catFiles.map((f) => (
+                        {groupFiles.map((f) => (
                           <div key={f.name} className="flex items-center justify-between gap-2">
                             <span className="truncate font-mono text-xs text-muted-foreground">
                               {f.name}
@@ -195,7 +247,7 @@ export function FileOrganizer() {
               <FolderSimpleStar className="size-10 text-muted-foreground/50" weight="thin" />
               <p className="text-sm font-medium">Sélectionnez un dossier</p>
               <p className="text-xs text-muted-foreground">
-                L'organisateur analysera les fichiers et les regroupera par type.
+                Choisissez ensuite votre mode d'organisation.
               </p>
             </CardContent>
           </Card>
